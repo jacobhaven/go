@@ -1999,25 +1999,34 @@ func parseCertificateRequest(in *certificateRequest) (*CertificateRequest, error
 	}
 
 	out.Extensions = make([]pkix.Extension, 0, len(extensions))
-
 	for _, e := range extensions {
-		value, ok := e.Value.([]byte)
-		if !ok {
-			return nil, errors.New("x509: extension attribute contained non-OCTET STRING data")
+		eVal, ok := e.Value.(struct {
+			Critical bool
+			Value    []byte
+		})
+		if ok {
+			out.Extensions = append(out.Extensions, pkix.Extension{
+				Id:       e.Type,
+				Critical: eVal.Critical,
+				Value:    eVal.Value,
+			})
+		} else {
+			value, ok := e.Value.([]byte)
+			if !ok {
+				return nil, errors.New("x509: extension attribute contained non-OCTET STRING data")
+			}
+
+			out.Extensions = append(out.Extensions, pkix.Extension{
+				Id:    e.Type,
+				Value: value,
+			})
 		}
 
-		out.Extensions = append(out.Extensions, pkix.Extension{
-			Id:    e.Type,
-			Value: value,
-		})
-
-		if len(e.Type) == 4 && e.Type[0] == 2 && e.Type[1] == 5 && e.Type[2] == 29 {
-			switch e.Type[3] {
-			case 17:
-				out.DNSNames, out.EmailAddresses, out.IPAddresses, err = parseSANExtension(value)
-				if err != nil {
-					return nil, err
-				}
+		if len(e.Type) == 4 && e.Type[0] == 2 && e.Type[1] == 5 && e.Type[2] == 29 && e.Type[3] == 17 {
+			value := out.Extensions[len(out.Extensions)-1].Value
+			out.DNSNames, out.EmailAddresses, out.IPAddresses, err = parseSANExtension(value)
+			if err != nil {
+				return nil, err
 			}
 		}
 	}
